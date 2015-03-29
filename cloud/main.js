@@ -11,7 +11,19 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     },
     success: function(httpResponse) {
       var friends = httpResponse.data.data;
-      response.success(friends.length);
+      var friendIDs = friends.map(function(friend) { return friend.id });
+      var friendQuery = new Parse.Query(Parse.User);
+      friendQuery.containedIn("fbID", friendIDs);
+      friendQuery.find({
+        success: function(results) {
+          // TODO: Only keep nearby friends
+          console.log(results);
+          response.success(results);
+        },
+        error: function(error) {
+          response.error("Error: " + error.code + " " + error.message);
+        }
+      });
     },
     error: function(httpResponse) {
       var error = httpResponse.data.error;
