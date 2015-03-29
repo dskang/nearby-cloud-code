@@ -1,6 +1,20 @@
-
-// Use Parse.Cloud.define to define as many cloud functions as you want.
-// For example:
-Parse.Cloud.define("hello", function(request, response) {
-  response.success("Hello world!");
+Parse.Cloud.define("nearbyFriends", function(request, response) {
+  var user = request.user;
+  var authData = user.get("authData");
+  var accessToken = authData["facebook"]["access_token"];
+  // Get Facebook friends
+  Parse.Cloud.httpRequest({
+    url: "https://graph.facebook.com/me/friends",
+    params: {
+      access_token: accessToken,
+    },
+    success: function(httpResponse) {
+      var friends = httpResponse.data.data;
+      response.success(friends.length);
+    },
+    error: function(httpResponse) {
+      var error = httpResponse.data.error;
+      response.error(error.type + " (" + error.code + "): " + error.message);
+    }
+  });
 });
