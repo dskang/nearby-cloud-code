@@ -1,0 +1,14 @@
+{
+  "global": {
+    "parseVersion": "1.4.0"
+  },
+  "applications": {
+    "Nearby": {
+      "applicationId": "qezEspdd6WnEHMneZCr9gt9sUFzUQzAjhx03xfuQ",
+      "masterKey": "ytrghMQ7845BySvS3XQXDRF6HMz9ll1OCrIcvVAZ"
+    },
+    "_default": {
+      "link": "Nearby"
+    }
+  }
+}
