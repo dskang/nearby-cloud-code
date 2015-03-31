@@ -18,6 +18,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
       var friends = httpResponse.data.data;
       var friendIDs = friends.map(function(friend) { return friend.id });
       var friendQuery = new Parse.Query(Parse.User);
+      friendQuery.select("location", "name");
       friendQuery.containedIn("fbID", friendIDs);
       friendQuery.find({
         success: function(results) {
