@@ -1,3 +1,8 @@
+var utils = require("cloud/utils.js");
+
+// Max distance between nearby users
+var NEARBY_DISTANCE = 150;
+
 Parse.Cloud.define("nearbyFriends", function(request, response) {
   var user = request.user;
   var authData = user.get("authData");
@@ -16,9 +21,15 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
       friendQuery.containedIn("fbID", friendIDs);
       friendQuery.find({
         success: function(results) {
-          // TODO: Only keep nearby friends
-          console.log(results);
-          response.success(results);
+          var nearbyFriends = results.filter(function(friend) {
+            var userLocation = user.get("location");
+            var friendLocation = friend.get("location");
+            var distance = utils.haversineDistance(
+              userLocation.latitude, userLocation.longitude,
+              friendLocation.latitude, friendLocation.longitude);
+            return distance <= NEARBY_DISTANCE;
+          });
+          response.success(nearbyFriends);
         },
         error: function(error) {
           response.error("Error: " + error.code + " " + error.message);
