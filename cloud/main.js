@@ -5,6 +5,17 @@ var NEARBY_DISTANCE = 150;
 
 Parse.Cloud.define("nearbyFriends", function(request, response) {
   var user = request.user;
+  if (!user) {
+    response.error("Request does not have an associated user.")
+    return;
+  }
+
+  var userLocation = user.get("location");
+  if (!userLocation) {
+    response.error("User's location is not set.")
+    return;
+  }
+
   var authData = user.get("authData");
   var accessToken = authData["facebook"]["access_token"];
   // Get Facebook friends
@@ -19,7 +30,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
       var friendIDs = friends.map(function(friend) { return friend.id });
       var friendQuery = new Parse.Query(Parse.User);
       friendQuery.select("location", "name");
-      friendQuery.containedIn("fbID", friendIDs);
+      friendQuery.containedIn("fbId", friendIDs);
       friendQuery.find({
         success: function(results) {
           var nearbyFriends = results.filter(function(friend) {
