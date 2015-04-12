@@ -75,7 +75,8 @@ Parse.Cloud.define("wave", function(request, response) {
     expiration_interval: 60 * 60 * 24, // 1 day
     data: {
       alert: sender.get("name") + " waved at you!",
-      senderId: sender.id
+      senderId: sender.id,
+      senderName: sender.get("name")
     }
   }, {
     success: function() {
