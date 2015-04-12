@@ -3,6 +3,15 @@ var utils = require("cloud/utils.js");
 // Max distance between nearby users
 var NEARBY_DISTANCE = 150;
 
+var getDistance = function(user1, user2) {
+  var user1Location = user1.get("location");
+  var user2Location = user2.get("location");
+  var distance = utils.haversineDistance(
+    user1Location.latitude, user1Location.longitude,
+    user2Location.latitude, user2Location.longitude);
+  return distance;
+};
+
 Parse.Cloud.define("updateFriends", function(request, response) {
   var user = request.user;
   if (!user) {
@@ -72,12 +81,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
   friendQuery.find({
     success: function(results) {
       var nearbyFriends = results.filter(function(friend) {
-        var userLocation = user.get("location");
-        var friendLocation = friend.get("location");
-        var distance = utils.haversineDistance(
-          userLocation.latitude, userLocation.longitude,
-          friendLocation.latitude, friendLocation.longitude);
-        return distance <= NEARBY_DISTANCE;
+        return getDistance(user, friend) <= NEARBY_DISTANCE;
       });
       response.success(nearbyFriends);
     },
