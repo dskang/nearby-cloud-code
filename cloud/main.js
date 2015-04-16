@@ -1,7 +1,11 @@
 var utils = require("cloud/utils.js");
 
 // Max distance between nearby users
+// 150 meters =~ 0.1 miles =~ 2 minute walk
 var NEARBY_DISTANCE = 150;
+
+// Max distance to wave to a user
+var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
 
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
@@ -100,26 +104,44 @@ Parse.Cloud.define("wave", function(request, response) {
 
   var recipientId = request.params.recipientId;
 
-  // TODO: Validate that sender is allowed to send to recipient (friend, nearby)
-  // TODO: Check if recipient is in stealth mode
+  var relation = sender.relation("friends");
+  var friendQuery = relation.query();
+  friendQuery.equalTo("objectId", recipientId);
+  friendQuery.find({
+    success: function(results) {
+      if (results.length === 0) {
+        response.error("No friend found.");
+        return;
+      }
 
-  var recipient = new Parse.User();
-  recipient.id = recipientId;
-  var pushQuery = new Parse.Query(Parse.Installation);
-  pushQuery.equalTo("user", recipient);
+      var recipient = results[0];
+      var hidden = recipient.get("hideLocation") === true;
+      var tooFar = getDistance(sender, recipient) > WAVE_DISTANCE;
+      if (hidden || tooFar) {
+        response.error(recipient.get("name") + " is no longer nearby.")
+        return;
+      }
 
-  Parse.Push.send({
-    where: pushQuery,
-    expiration_interval: 60 * 60 * 24, // 1 day
-    data: {
-      type: "wave",
-      alert: sender.get("name") + " waved at you!",
-      senderId: sender.id,
-      senderName: sender.get("name")
-    }
-  }, {
-    success: function() {
-      response.success();
+      var pushQuery = new Parse.Query(Parse.Installation);
+      pushQuery.equalTo("user", recipient);
+
+      Parse.Push.send({
+        where: pushQuery,
+        expiration_interval: 60 * 60 * 24, // 1 day
+        data: {
+          type: "wave",
+          alert: sender.get("name") + " waved at you!",
+          senderId: sender.id,
+          senderName: sender.get("name")
+        }
+      }, {
+        success: function() {
+          response.success();
+        },
+        error: function(error) {
+          response.error("Error: " + error.code + " " + error.message);
+        }
+      });
     },
     error: function(error) {
       response.error("Error: " + error.code + " " + error.message);
