@@ -104,6 +104,7 @@ Parse.Cloud.define("wave", function(request, response) {
 
   var recipientId = request.params.recipientId;
 
+  // Validate that sender is friends with recipient
   var relation = sender.relation("friends");
   var friendQuery = relation.query();
   friendQuery.equalTo("objectId", recipientId);
@@ -115,7 +116,9 @@ Parse.Cloud.define("wave", function(request, response) {
       }
 
       var recipient = results[0];
+      // Validate that recipient is not hidden
       var hidden = recipient.get("hideLocation") === true;
+      // Validate that sender is within waving distance of recipient
       var tooFar = getDistance(sender, recipient) > WAVE_DISTANCE;
       if (hidden || tooFar) {
         response.error(recipient.get("name") + " is no longer nearby.")
