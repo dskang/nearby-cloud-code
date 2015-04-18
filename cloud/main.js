@@ -16,6 +16,20 @@ var getDistance = function(user1, user2) {
   return distance;
 };
 
+// Return true if user1 and user2 are best friends
+var isBestFriend = function(user1, user2) {
+  var bestFriends = user1.get("bestFriends");
+  if (bestFriends) {
+    for (var i = 0; i < bestFriends.length; i++) {
+      var bestFriend = bestFriends[i];
+      if (bestFriend.id === user2.id) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 Parse.Cloud.define("updateFriends", function(request, response) {
   var user = request.user;
   if (!user) {
@@ -140,6 +154,87 @@ Parse.Cloud.define("wave", function(request, response) {
       }, {
         success: function() {
           response.success();
+        },
+        error: function(error) {
+          response.error("Error: " + error.code + " " + error.message);
+        }
+      });
+    },
+    error: function(error) {
+      response.error("Error: " + error.code + " " + error.message);
+    }
+  });
+});
+
+Parse.Cloud.define("requestBestFriend", function(request, response) {
+  var sender = request.user;
+  if (!sender) {
+    response.error("Request does not have an associated user.");
+    return;
+  }
+
+  var recipientId = request.params.recipientId;
+  // Validate that sender is friends with recipient
+  var relation = sender.relation("friends");
+  var friendQuery = relation.query();
+  friendQuery.equalTo("objectId", recipientId);
+  friendQuery.find({
+    success: function(results) {
+      if (results.length === 0) {
+        response.error("No friend found.");
+        return;
+      }
+
+      var recipient = results[0];
+      // Validate that sender is not already best friends with recipient
+      if (isBestFriend(sender, recipient)) {
+        response.error("You are already best friends.");
+        return;
+      }
+
+      // Validate that sender has not already sent a request
+      var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
+      var query = new Parse.Query(BestFriendRequest);
+      query.equalTo("fromUser", sender);
+      query.equalTo("toUser", recipient);
+      query.find({
+        success: function(results) {
+          if (results.length > 0) {
+            response.error("You have already sent a best friend request.");
+            return;
+          } else {
+            var bestFriendRequest = new BestFriendRequest()
+            bestFriendRequest.set("fromUser", sender);
+            bestFriendRequest.set("toUser", recipient);
+            bestFriendRequest.set("status", "pending");
+            bestFriendRequest.save(null, {
+              success: function(bestFriendRequest) {
+              },
+              error: function(bestFriendRequest, error) {
+                response.error("Error: " + error.code + " " + error.message);
+              }
+            });
+
+            var pushQuery = new Parse.Query(Parse.Installation);
+            pushQuery.equalTo("user", recipient);
+
+            Parse.Push.send({
+              where: pushQuery,
+              data: {
+                type: "bestFriendRequest",
+                alert: sender.get("name") + " added you as a best friend.",
+                senderId: sender.id,
+                senderName: sender.get("name")
+              }
+            }, {
+              success: function() {
+                response.success();
+              },
+              error: function(error) {
+                response.error("Error: " + error.code + " " + error.message);
+              }
+            });
+          }
         },
         error: function(error) {
           response.error("Error: " + error.code + " " + error.message);
