@@ -166,7 +166,7 @@ Parse.Cloud.define("wave", function(request, response) {
   });
 });
 
-Parse.Cloud.define("requestBestFriend", function(request, response) {
+Parse.Cloud.define("addBestFriend", function(request, response) {
   Parse.Cloud.useMasterKey();
   var sender = request.user;
   if (!sender) {
@@ -206,8 +206,9 @@ Parse.Cloud.define("requestBestFriend", function(request, response) {
         success: function(results) {
           if (results.length > 0) {
             var bestFriendRequest = results[0];
-            if (bestFriendRequest.get("fromUser").id === sender.id) {
-              var status = bestFriendRequest.get("status");
+            var status = bestFriendRequest.get("status");
+            var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
+            if (userSentRequest) {
               if (status === "pending") {
                 response.error("You have already sent a best friend request.");
               } else if (status === "accepted") {
@@ -219,7 +220,6 @@ Parse.Cloud.define("requestBestFriend", function(request, response) {
                 sendBestFriendRequest(sender, recipient, response);
               }
             } else {
-              var status = bestFriendRequest.get("status");
               if (status === "pending") {
                 // Accept best friend request
                 bestFriendRequest.set("status", "accepted");
@@ -276,3 +276,55 @@ var sendBestFriendRequest = function(fromUser, toUser, response) {
     }
   });
 };
+
+Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
+  var sender = request.user;
+  if (!sender) {
+    response.error("Request does not have an associated user.");
+    return;
+  }
+
+  var recipientId = request.params.recipientId;
+  var recipient = new Parse.User();
+  recipient.id = recipientId;
+
+  // Find existing best friend requests
+  var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
+  var requestFromSenderQuery = new Parse.Query(BestFriendRequest);
+  requestFromSenderQuery.equalTo("fromUser", sender);
+  requestFromSenderQuery.equalTo("toUser", recipient);
+  var requestToSenderQuery = new Parse.Query(BestFriendRequest);
+  requestToSenderQuery.equalTo("fromUser", recipient);
+  requestToSenderQuery.equalTo("toUser", sender);
+  var query = Parse.Query.or(requestFromSenderQuery, requestToSenderQuery);
+  query.find({
+    success: function(results) {
+      if (results.length > 0) {
+        var bestFriendRequest = results[0];
+        var status = bestFriendRequest.get("status");
+        var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
+        if (userSentRequest) {
+          if (status === "pending") {
+            bestFriendRequest.destroy();
+            response.success();
+          } else {
+            response.error("Cannot remove request that is not pending.");
+          }
+        } else {
+          if (status === "pending") {
+            bestFriendRequest.set("status", "rejected");
+            bestFriendRequest.save();
+            response.success();
+          } else {
+            response.error("Cannot remove request that is not pending.");
+          }
+        }
+      } else {
+        response.error("No best friend request found.");
+      }
+    },
+    error: function(error) {
+      response.error("Error: " + error.code + " " + error.message);
+    }
+  });
+});
