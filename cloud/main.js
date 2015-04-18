@@ -20,8 +20,6 @@ var getDistance = function(user1, user2) {
 var isBestFriend = function(user1, user2) {
   console.log("called");
   var bestFriends = user1.get("bestFriends");
-  console.log(user1.get("name"));
-  console.log(bestFriends);
   if (bestFriends) {
     for (var i = 0; i < bestFriends.length; i++) {
       var bestFriend = bestFriends[i];
@@ -209,42 +207,43 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
         success: function(results) {
           if (results.length > 0) {
             var bestFriendRequest = results[0];
-            var status = bestFriendRequest.get("status");
             var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
             if (userSentRequest) {
-              if (status === "pending") {
-                response.error("You have already sent a best friend request.");
-              } else if (status === "accepted") {
-                response.error("You are already best friends.");
-              } else if (status === "rejected") {
-                // Rejected users can send requests until blocked
-                bestFriendRequest.set("status", "pending");
-                bestFriendRequest.save();
-                sendBestFriendRequest(sender, recipient, response);
-              }
+              response.error("You have already sent a best friend request.");
             } else {
-              if (status === "pending") {
-                // Accept best friend request
-                bestFriendRequest.set("status", "accepted");
-                bestFriendRequest.save();
-                sender.addUnique("bestFriends", recipient);
-                recipient.addUnique("bestFriends", sender);
-                sender.save();
-                recipient.save();
-                response.success();
-              } else if (status === "accepted") {
-                response.error("You are already best friends.");
-              } else if (status === "rejected") {
-                response.error("You cannot accept a rejected best friend request.");
-              }
+              // Accept best friend request
+              bestFriendRequest.destroy();
+              sender.addUnique("bestFriends", recipient);
+              recipient.addUnique("bestFriends", sender);
+              sender.save();
+              recipient.save();
+              response.success();
             }
           } else {
             var bestFriendRequest = new BestFriendRequest()
             bestFriendRequest.set("fromUser", sender);
             bestFriendRequest.set("toUser", recipient);
-            bestFriendRequest.set("status", "pending");
             bestFriendRequest.save();
-            sendBestFriendRequest(sender, recipient, response);
+
+            var pushQuery = new Parse.Query(Parse.Installation);
+            pushQuery.equalTo("user", recipient);
+
+            Parse.Push.send({
+              where: pushQuery,
+              data: {
+                type: "bestFriendRequest",
+                alert: sender.get("name") + " added you as a best friend.",
+                senderId: sender.id,
+                senderName: sender.get("name")
+              }
+            }, {
+              success: function() {
+                response.success();
+              },
+              error: function(error) {
+                response.error("Error: " + error.code + " " + error.message);
+              }
+            });
           }
         },
         error: function(error) {
@@ -257,28 +256,6 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
     }
   });
 });
-
-var sendBestFriendRequest = function(fromUser, toUser, response) {
-  var pushQuery = new Parse.Query(Parse.Installation);
-  pushQuery.equalTo("user", toUser);
-
-  Parse.Push.send({
-    where: pushQuery,
-    data: {
-      type: "bestFriendRequest",
-      alert: fromUser.get("name") + " added you as a best friend.",
-      senderId: fromUser.id,
-      senderName: fromUser.get("name")
-    }
-  }, {
-    success: function() {
-      response.success();
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
-    }
-  });
-};
 
 Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
   var sender = request.user;
@@ -304,24 +281,8 @@ Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
     success: function(results) {
       if (results.length > 0) {
         var bestFriendRequest = results[0];
-        var status = bestFriendRequest.get("status");
-        var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
-        if (userSentRequest) {
-          if (status === "pending") {
-            bestFriendRequest.destroy();
-            response.success();
-          } else {
-            response.error("Cannot remove request that is not pending.");
-          }
-        } else {
-          if (status === "pending") {
-            bestFriendRequest.set("status", "rejected");
-            bestFriendRequest.save();
-            response.success();
-          } else {
-            response.error("Cannot remove request that is not pending.");
-          }
-        }
+        bestFriendRequest.destroy();
+        response.success();
       } else {
         response.error("No best friend request found.");
       }
