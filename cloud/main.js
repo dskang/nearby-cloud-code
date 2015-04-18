@@ -18,7 +18,10 @@ var getDistance = function(user1, user2) {
 
 // Return true if user1 and user2 are best friends
 var isBestFriend = function(user1, user2) {
+  console.log("called");
   var bestFriends = user1.get("bestFriends");
+  console.log(user1.get("name"));
+  console.log(bestFriends);
   if (bestFriends) {
     for (var i = 0; i < bestFriends.length; i++) {
       var bestFriend = bestFriends[i];
@@ -327,4 +330,26 @@ Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
       response.error("Error: " + error.code + " " + error.message);
     }
   });
+});
+
+Parse.Cloud.define("removeBestFriend", function(request, response) {
+  Parse.Cloud.useMasterKey();
+  var sender = request.user;
+  if (!sender) {
+    response.error("Request does not have an associated user.");
+    return;
+  }
+
+  var recipientId = request.params.recipientId;
+  var recipient = new Parse.User();
+  recipient.id = recipientId;
+
+  var bf = isBestFriend(sender, recipient);
+
+  sender.remove("bestFriends", recipient);
+  recipient.remove("bestFriends", sender);
+  sender.save();
+  recipient.save();
+
+  response.success();
 });
