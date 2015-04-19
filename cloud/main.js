@@ -94,18 +94,7 @@ Parse.Cloud.define("updateFriends", function(request, response) {
   });
 });
 
-Parse.Cloud.define("nearbyFriends", function(request, response) {
-  var user = request.user;
-  if (!user) {
-    response.error("Request does not have an associated user.");
-    return;
-  }
-
-  if (!user.get("location")) {
-    response.error("User's location is not set.");
-    return;
-  }
-
+var getNearbyFriendsQuery = function(user) {
   var relation = user.relation("friends");
   var friendQuery = relation.query();
   friendQuery.select("location", "name");
@@ -121,12 +110,86 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     });
     friendQuery.notContainedIn("objectId", blockedIds);
   }
-  friendQuery.find({
+  return friendQuery;
+};
+
+var getBestFriendsQuery = function(user) {
+  var bestFriendsQuery = new Parse.Query(Parse.User);
+  var bestFriends = user.get("bestFriends");
+  var bestFriendsIds = bestFriends.map(function(friend) {
+    return friend.id
+  });
+  bestFriendsQuery.select("hideLocation", "location", "name", "firstName", "blockedUsers");
+  bestFriendsQuery.containedIn("objectId", bestFriendsIds);
+  // Don't include people who user has blocked
+  var blockedUsers = user.get("blockedUsers");
+  if (blockedUsers) {
+    var blockedIds = blockedUsers.map(function(blockedUser) {
+      return blockedUser.id;
+    });
+    bestFriendsQuery.notContainedIn("objectId", blockedIds);
+  }
+  return bestFriendsQuery;
+};
+
+Parse.Cloud.define("nearbyFriends", function(request, response) {
+  var user = request.user;
+  if (!user) {
+    response.error("Request does not have an associated user.");
+    return;
+  }
+
+  if (!user.get("location")) {
+    response.error("User's location is not set.");
+    return;
+  }
+
+  var friendsQuery = getNearbyFriendsQuery(user);
+  friendsQuery.find({
     success: function(results) {
       var nearbyFriends = results.filter(function(friend) {
         return getDistance(user, friend) <= NEARBY_DISTANCE;
       });
-      response.success(nearbyFriends);
+
+      var bestFriends = user.get("bestFriends");
+      if (bestFriends) {
+        var bestFriendsQuery = getBestFriendsQuery(user);
+        bestFriendsQuery.find({
+          success: function(bestFriends) {
+            // Filter out best friends in the nearbyFriends list
+            bestFriends = bestFriends.filter(function(friend) {
+              return getDistance(user, friend) > NEARBY_DISTANCE;
+            });
+
+            // Remove locations from friends who are hidden or have blocked user
+            bestFriends = bestFriends.map(function(friend) {
+              var friendJSON = friend.toJSON();
+              friendJSON["__type"] = "Object";
+              friendJSON["className"] = "_User";
+              var hidden = friend.get("hideLocation");
+              var blocked = hasBlocked(friend, user);
+              if (hidden || blocked) {
+                friendJSON["hideLocation"] = true;
+                delete friendJSON["location"];
+              }
+              delete friendJSON["blockedUsers"];
+              return friendJSON;
+            });
+            response.success({
+              nearbyFriends: nearbyFriends,
+              bestFriends: bestFriends
+            });
+          },
+          error: function(error) {
+            response.error("Error: " + error.code + " " + error.message);
+          }
+        });
+      } else {
+        response.success({
+          nearbyFriends: nearbyFriends,
+          bestFriends: []
+        });
+      }
     },
     error: function(error) {
       response.error("Error: " + error.code + " " + error.message);
