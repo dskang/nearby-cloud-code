@@ -244,6 +244,7 @@ Parse.Cloud.define("wave", function(request, response) {
         data: {
           type: "wave",
           alert: sender.get("name") + " waved at you!",
+          sound: "default",
           senderId: sender.id,
           senderName: sender.get("name")
         }
@@ -327,7 +328,8 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
               where: pushQuery,
               data: {
                 type: "bestFriendRequest",
-                alert: sender.get("name") + " added you as a best friend."
+                alert: sender.get("name") + " added you as a best friend.",
+                sound: "default"
               }
             }, {
               success: function() {
