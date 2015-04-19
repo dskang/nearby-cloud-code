@@ -18,12 +18,25 @@ var getDistance = function(user1, user2) {
 
 // Return true if user1 and user2 are best friends
 var isBestFriend = function(user1, user2) {
-  console.log("called");
   var bestFriends = user1.get("bestFriends");
   if (bestFriends) {
     for (var i = 0; i < bestFriends.length; i++) {
       var bestFriend = bestFriends[i];
       if (bestFriend.id === user2.id) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+// Return true if user1 blocked user2
+var hasBlocked = function(user1, user2) {
+  var blockedUsers = user1.get("blockedUsers");
+  if (blockedUsers) {
+    for (var i = 0; i < blockedUsers.length; i++) {
+      var blockedUser = blockedUsers[i];
+      if (blockedUser.id === user2.id) {
         return true;
       }
     }
@@ -96,7 +109,18 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
   var relation = user.relation("friends");
   var friendQuery = relation.query();
   friendQuery.select("location", "name");
+  // Don't include people who are hidden
   friendQuery.notEqualTo("hideLocation", true);
+  // Don't include people who have blocked user
+  friendQuery.notEqualTo("blockedUsers", user);
+  // Don't include people who user has blocked
+  var blockedUsers = user.get("blockedUsers");
+  if (blockedUsers) {
+    var blockedIds = blockedUsers.map(function(blockedUser) {
+      return blockedUser.id;
+    });
+    friendQuery.notContainedIn("objectId", blockedIds);
+  }
   friendQuery.find({
     success: function(results) {
       var nearbyFriends = results.filter(function(friend) {
@@ -135,7 +159,9 @@ Parse.Cloud.define("wave", function(request, response) {
       var hidden = recipient.get("hideLocation") === true;
       // Validate that sender is within waving distance of recipient
       var tooFar = getDistance(sender, recipient) > WAVE_DISTANCE;
-      if (hidden || tooFar) {
+      // Validate that recipient has not blocked sender
+      var blocked = hasBlocked(recipient, sender);
+      if (hidden || tooFar || blocked) {
         response.error(recipient.get("name") + " is no longer nearby.")
         return;
       }
@@ -311,6 +337,5 @@ Parse.Cloud.define("removeBestFriend", function(request, response) {
   recipient.remove("bestFriends", sender);
   sender.save();
   recipient.save();
-
   response.success();
 });
