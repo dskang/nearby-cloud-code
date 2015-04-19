@@ -157,8 +157,14 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
         bestFriendsQuery.find({
           success: function(bestFriends) {
             // Filter out best friends in the nearbyFriends list
-            bestFriends = bestFriends.filter(function(friend) {
-              return getDistance(user, friend) > NEARBY_DISTANCE;
+            bestFriends = bestFriends.filter(function(bestFriend) {
+              for (var i = 0; i < nearbyFriends.length; i++) {
+                var nearbyFriend = nearbyFriends[i];
+                if (nearbyFriend.id === bestFriend.id) {
+                  return false;
+                }
+              }
+              return true;
             });
 
             // Remove locations from friends who are hidden or have blocked user
@@ -225,7 +231,7 @@ Parse.Cloud.define("wave", function(request, response) {
       // Validate that recipient has not blocked sender
       var blocked = hasBlocked(recipient, sender);
       if (hidden || tooFar || blocked) {
-        response.error(recipient.get("name") + " is no longer nearby.")
+        response.error(recipient.get("firstName") + " is no longer nearby.")
         return;
       }
 
@@ -321,9 +327,7 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
               where: pushQuery,
               data: {
                 type: "bestFriendRequest",
-                alert: sender.get("name") + " added you as a best friend.",
-                senderId: sender.id,
-                senderName: sender.get("name")
+                alert: sender.get("name") + " added you as a best friend."
               }
             }, {
               success: function() {
