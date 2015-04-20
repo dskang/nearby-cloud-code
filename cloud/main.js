@@ -226,8 +226,8 @@ Parse.Cloud.define("wave", function(request, response) {
       var recipient = results[0];
       // Validate that recipient is not hidden
       var hidden = recipient.get("hideLocation") === true;
-      // Validate that sender is within waving distance of recipient
-      var tooFar = getDistance(sender, recipient) > WAVE_DISTANCE;
+      // Validate that sender is within waving distance of recipient if they're not best friends
+      var tooFar = !isBestFriend(sender, recipient) && getDistance(sender, recipient) > WAVE_DISTANCE;
       // Validate that recipient has not blocked sender
       var blocked = hasBlocked(recipient, sender);
       if (hidden || tooFar || blocked) {
