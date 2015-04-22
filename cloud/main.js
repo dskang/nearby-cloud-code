@@ -238,12 +238,18 @@ Parse.Cloud.define("wave", function(request, response) {
       var pushQuery = new Parse.Query(Parse.Installation);
       pushQuery.equalTo("user", recipient);
 
+      // FIXME: Jokes
+      var message = sender.get("name") + " waved at you!";
+      if (sender.get("name") === "Dan Kang" && recipient.get("name") === "Michelle Lee") {
+        message = "DK misses you!"
+      }
+
       Parse.Push.send({
         where: pushQuery,
         expiration_interval: 60 * 60 * 24, // 1 day
         data: {
           type: "wave",
-          alert: sender.get("name") + " waved at you!",
+          alert: message,
           sound: "default",
           senderId: sender.id,
           senderName: sender.get("name")
