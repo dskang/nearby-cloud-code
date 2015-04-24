@@ -210,6 +210,7 @@ Parse.Cloud.define("wave", function(request, response) {
     return;
   }
 
+  var message = request.params.message;
   var recipientId = request.params.recipientId;
 
   // Validate that sender is friends with recipient
@@ -239,9 +240,9 @@ Parse.Cloud.define("wave", function(request, response) {
       pushQuery.equalTo("user", recipient);
 
       // FIXME: Jokes
-      var message = sender.get("name") + " waved at you!";
+      var pushMessage = sender.get("name") + ": " + message;
       if (sender.get("name") === "Dan Kang" && recipient.get("name") === "Michelle Lee") {
-        message = "DK misses you!"
+        pushMessage = "DK misses you!"
       }
 
       Parse.Push.send({
@@ -249,7 +250,7 @@ Parse.Cloud.define("wave", function(request, response) {
         expiration_interval: 60 * 60 * 24, // 1 day
         data: {
           type: "wave",
-          alert: message,
+          alert: pushMessage,
           sound: "default",
           senderId: sender.id,
           senderName: sender.get("name")
