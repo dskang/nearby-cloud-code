@@ -211,6 +211,9 @@ Parse.Cloud.define("wave", function(request, response) {
   }
 
   var message = request.params.message;
+  if (!message) {
+    message = "👋🏽";
+  }
   var recipientId = request.params.recipientId;
 
   // Validate that sender is friends with recipient
