@@ -7,6 +7,9 @@ var NEARBY_DISTANCE = 150;
 // Max distance to wave to a user
 var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
 
+// Number of seconds before a location is considered stale
+var LOCATION_STALE_AGE = 60 * 5;
+
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
   var user2Location = user2.get("location");
@@ -132,6 +135,40 @@ var getBestFriendsQuery = function(user) {
   return bestFriendsQuery;
 };
 
+// Send a silent notification to get new location is current data is stale
+var requestUpdatedLocations = function(users) {
+  for (var i = 0; i < users.length; i++) {
+    var user = users[i];
+    var hidden = user.get("hideLocation");
+    if (!hidden) {
+      var location = user.get("location");
+      var locationAge;
+      if (location) {
+        var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
+        locationAge = currentTimestamp - location["timestamp"];
+      }
+      if (!location || locationAge > LOCATION_STALE_AGE) {
+        var pushQuery = new Parse.Query(Parse.Installation);
+        pushQuery.equalTo("user", user);
+
+        Parse.Push.send({
+          where: pushQuery,
+          data: {
+            "content-available": 1,
+            type: "updateLocation"
+          }
+        }, {
+          success: function() {
+          },
+          error: function(error) {
+            response.error("Error: " + error.code + " " + error.message);
+          }
+        });
+      }
+    }
+  }
+};
+
 Parse.Cloud.define("nearbyFriends", function(request, response) {
   var user = request.user;
   if (!user) {
@@ -168,7 +205,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
             });
 
             // Remove locations from friends who are hidden or have blocked user
-            bestFriends = bestFriends.map(function(friend) {
+            var bestFriendsJSON = bestFriends.map(function(friend) {
               var friendJSON = friend.toJSON();
               friendJSON["__type"] = "Object";
               friendJSON["className"] = "_User";
@@ -183,8 +220,10 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
             });
             response.success({
               nearbyFriends: nearbyFriends,
-              bestFriends: bestFriends
+              bestFriends: bestFriendsJSON
             });
+            requestUpdatedLocations(nearbyFriends);
+            requestUpdatedLocations(bestFriends);
           },
           error: function(error) {
             response.error("Error: " + error.code + " " + error.message);
@@ -195,6 +234,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
           nearbyFriends: nearbyFriends,
           bestFriends: []
         });
+        requestUpdatedLocations(nearbyFriends);
       }
     },
     error: function(error) {
@@ -241,7 +281,6 @@ Parse.Cloud.define("wave", function(request, response) {
 
       var pushQuery = new Parse.Query(Parse.Installation);
       pushQuery.equalTo("user", recipient);
-
 
       var pushMessage = sender.get("name") + ": " + message;
       Parse.Push.send({
