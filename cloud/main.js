@@ -71,23 +71,29 @@ Parse.Cloud.define("updateFriends", function(request, response) {
       var friendQuery = new Parse.Query(Parse.User);
       friendQuery.containedIn("fbId", friendFbIds);
       friendQuery.find({
-        success: function(results) {
+        success: function(friends) {
           var relation = user.relation("friends");
-          for (var i = 0; i < results.length; i++) {
+          for (var i = 0; i < friends.length; i++) {
             // Add friend as user's friend
-            var friend = results[i];
+            var friend = friends[i];
             relation.add(friend);
 
             // Add user as friend's friend
             var friendRelation = friend.relation("friends");
             friendRelation.add(user);
-            friend.save();
           }
-          user.save(null, {
-            success: function(user) {
-              response.success();
+          Parse.Object.saveAll(friends, {
+            success: function(list) {
+              user.save(null, {
+                success: function(user) {
+                  response.success();
+                },
+                error: function(user, error) {
+                  response.error("Error: " + error.code + " " + error.message);
+                }
+              });
             },
-            error: function(user, error) {
+            error: function(error) {
               response.error("Error: " + error.code + " " + error.message);
             }
           });
