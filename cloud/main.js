@@ -48,6 +48,7 @@ var hasBlocked = function(user1, user2) {
 };
 
 Parse.Cloud.define("updateFriends", function(request, response) {
+  Parse.Cloud.useMasterKey();
   var user = request.user;
   if (!user) {
     response.error("Request does not have an associated user.");
@@ -73,8 +74,14 @@ Parse.Cloud.define("updateFriends", function(request, response) {
         success: function(results) {
           var relation = user.relation("friends");
           for (var i = 0; i < results.length; i++) {
+            // Add friend as user's friend
             var friend = results[i];
             relation.add(friend);
+
+            // Add user as friend's friend
+            var friendRelation = friend.relation("friends");
+            friendRelation.add(user);
+            friend.save();
           }
           user.save(null, {
             success: function(user) {
