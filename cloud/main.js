@@ -361,11 +361,17 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
             } else {
               // Accept best friend request
               bestFriendRequest.destroy();
-              sender.addUnique("bestFriends", recipient);
               recipient.addUnique("bestFriends", sender);
-              sender.save();
               recipient.save();
-              response.success();
+              sender.addUnique("bestFriends", recipient);
+              sender.save(null, {
+                success: function(sender) {
+                  response.success();
+                },
+                error: function(error) {
+                  response.error("Error: " + error.code + " " + error.message);
+                }
+              });
             }
           } else {
             var bestFriendRequest = new BestFriendRequest()
@@ -454,9 +460,15 @@ Parse.Cloud.define("removeBestFriend", function(request, response) {
 
   var bf = isBestFriend(sender, recipient);
 
-  sender.remove("bestFriends", recipient);
   recipient.remove("bestFriends", sender);
-  sender.save();
   recipient.save();
-  response.success();
+  sender.remove("bestFriends", recipient);
+  sender.save(null, {
+    success: function(sender) {
+      response.success();
+    },
+    error: function(error) {
+      response.error("Error: " + error.code + " " + error.message);
+    }
+  });
 });
