@@ -50,7 +50,7 @@ var hasBlocked = function(user1, user2) {
   return false;
 };
 
-var getNearbyFriendsQuery = function(user) {
+var getNearbyFriends = function(user) {
   var relation = user.relation("friends");
   var friendQuery = relation.query();
   friendQuery.select("location", "name");
@@ -66,15 +66,23 @@ var getNearbyFriendsQuery = function(user) {
     });
     friendQuery.notContainedIn("objectId", blockedIds);
   }
-  return friendQuery;
+  return friendQuery.find().then(function(friends) {
+    var nearbyFriends = friends.filter(function(friend) {
+      return getDistance(user, friend) <= NEARBY_DISTANCE;
+    });
+    return Parse.Promise.as(nearbyFriends);
+  });
 };
 
-var getBestFriendsQuery = function(user) {
-  var bestFriendsQuery = new Parse.Query(Parse.User);
+var getBestFriends = function(user) {
   var bestFriends = user.get("bestFriends");
+  if (!bestFriends) {
+    return Parse.Promise.as([]);
+  }
   var bestFriendsIds = bestFriends.map(function(friend) {
     return friend.id
   });
+  var bestFriendsQuery = new Parse.Query(Parse.User);
   bestFriendsQuery.select("hideLocation", "location", "name", "firstName", "blockedUsers");
   bestFriendsQuery.containedIn("objectId", bestFriendsIds);
   // Don't include people who user has blocked
@@ -85,7 +93,7 @@ var getBestFriendsQuery = function(user) {
     });
     bestFriendsQuery.notContainedIn("objectId", blockedIds);
   }
-  return bestFriendsQuery;
+  return bestFriendsQuery.find();
 };
 
 // Send a silent notification to get new location is current data is stale
@@ -134,65 +142,43 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     return;
   }
 
-  var friendsQuery = getNearbyFriendsQuery(user);
-  friendsQuery.find({
-    success: function(results) {
-      var nearbyFriends = results.filter(function(friend) {
-        return getDistance(user, friend) <= NEARBY_DISTANCE;
-      });
-
-      var bestFriends = user.get("bestFriends");
-      if (bestFriends) {
-        var bestFriendsQuery = getBestFriendsQuery(user);
-        bestFriendsQuery.find({
-          success: function(bestFriends) {
-            // Filter out best friends in the nearbyFriends list
-            bestFriends = bestFriends.filter(function(bestFriend) {
-              for (var i = 0; i < nearbyFriends.length; i++) {
-                var nearbyFriend = nearbyFriends[i];
-                if (nearbyFriend.id === bestFriend.id) {
-                  return false;
-                }
-              }
-              return true;
-            });
-
-            // Remove locations from friends who are hidden or have blocked user
-            var bestFriendsJSON = bestFriends.map(function(friend) {
-              var friendJSON = friend.toJSON();
-              friendJSON["__type"] = "Object";
-              friendJSON["className"] = "_User";
-              var hidden = friend.get("hideLocation");
-              var blocked = hasBlocked(friend, user);
-              if (hidden || blocked) {
-                friendJSON["hideLocation"] = true;
-                delete friendJSON["location"];
-              }
-              delete friendJSON["blockedUsers"];
-              return friendJSON;
-            });
-            response.success({
-              nearbyFriends: nearbyFriends,
-              bestFriends: bestFriendsJSON
-            });
-            requestUpdatedLocations(nearbyFriends);
-            requestUpdatedLocations(bestFriends);
-          },
-          error: function(error) {
-            response.error("Error: " + error.code + " " + error.message);
-          }
-        });
-      } else {
-        response.success({
-          nearbyFriends: nearbyFriends,
-          bestFriends: []
-        });
-        requestUpdatedLocations(nearbyFriends);
+  var promises = [getNearbyFriends(user), getBestFriends(user)];
+  Parse.Promise.when(promises).then(function(nearbyFriends, bestFriends) {
+    // Filter out best friends in the nearbyFriends list
+    bestFriends = bestFriends.filter(function(bestFriend) {
+      for (var i = 0; i < nearbyFriends.length; i++) {
+        var nearbyFriend = nearbyFriends[i];
+        if (nearbyFriend.id === bestFriend.id) {
+          return false;
+        }
       }
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
-    }
+      return true;
+    });
+
+    // Remove locations from friends who are hidden or have blocked user
+    var bestFriendsJSON = bestFriends.map(function(friend) {
+      var friendJSON = friend.toJSON();
+      friendJSON["__type"] = "Object";
+      friendJSON["className"] = "_User";
+      var hidden = friend.get("hideLocation");
+      var blocked = hasBlocked(friend, user);
+      if (hidden || blocked) {
+        friendJSON["hideLocation"] = true;
+        delete friendJSON["location"];
+      }
+      delete friendJSON["blockedUsers"];
+      return friendJSON;
+    });
+
+    response.success({
+      nearbyFriends: nearbyFriends,
+      bestFriends: bestFriendsJSON
+    });
+
+    // requestUpdatedLocations(nearbyFriends);
+    // requestUpdatedLocations(bestFriends);
+  }, function(error) {
+    response.error("Error: " + error.code + " " + error.message);
   });
 });
 
