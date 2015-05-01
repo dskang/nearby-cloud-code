@@ -178,7 +178,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     // Respond with friends regardless of push notification success
     Parse.Promise.when(pushPromises).then(respond, respond);
   }, function(error) {
-    response.error("Error: " + error.code + " " + error.message);
+    response.error("(" + error.code + "): " + error.message);
   });
 });
 
@@ -199,51 +199,46 @@ Parse.Cloud.define("wave", function(request, response) {
   var relation = sender.relation("friends");
   var friendQuery = relation.query();
   friendQuery.equalTo("objectId", recipientId);
-  friendQuery.find({
-    success: function(results) {
-      if (results.length === 0) {
-        response.error("No friend found.");
-        return;
-      }
-
-      var recipient = results[0];
-      // Validate that recipient is not hidden
-      var hidden = recipient.get("hideLocation") === true;
-      // Validate that sender is within waving distance of recipient if they're not best friends
-      var tooFar = !isBestFriend(sender, recipient) && getDistance(sender, recipient) > WAVE_DISTANCE;
-      // Validate that recipient has not blocked sender
-      var blocked = hasBlocked(recipient, sender);
-      if (hidden || tooFar || blocked) {
-        response.error(recipient.get("firstName") + " is no longer nearby.")
-        return;
-      }
-
-      var pushQuery = new Parse.Query(Parse.Installation);
-      pushQuery.equalTo("user", recipient);
-
-      var pushMessage = sender.get("name") + ": " + message;
-      Parse.Push.send({
-        where: pushQuery,
-        expiration_interval: 60 * 60 * 24, // 1 day
-        data: {
-          type: "wave",
-          alert: pushMessage,
-          sound: "default",
-          senderId: sender.id,
-          senderName: sender.get("name")
-        }
-      }, {
-        success: function() {
-          response.success();
-        },
-        error: function(error) {
-          response.error("Error: " + error.code + " " + error.message);
-        }
-      });
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
+  friendQuery.find().then(function(results) {
+    if (results.length === 0) {
+      return Parse.Promise.error("No friend found.");
     }
+    var recipient = results[0];
+    // Validate that recipient is not hidden
+    var hidden = recipient.get("hideLocation") === true;
+    // Validate that sender is within waving distance of recipient if they're not best friends
+    var tooFar = !isBestFriend(sender, recipient) && getDistance(sender, recipient) > WAVE_DISTANCE;
+    // Validate that recipient has not blocked sender
+    var blocked = hasBlocked(recipient, sender);
+    if (hidden || tooFar || blocked) {
+      return Parse.Promise.error(recipient.get("firstName") + " is no longer nearby.")
+    }
+
+    var pushQuery = new Parse.Query(Parse.Installation);
+    pushQuery.equalTo("user", recipient);
+
+    var pushMessage = sender.get("name") + ": " + message;
+    return Parse.Push.send({
+      where: pushQuery,
+      expiration_interval: 60 * 60 * 24, // 1 day
+      data: {
+        type: "wave",
+        alert: pushMessage,
+        sound: "default",
+        senderId: sender.id,
+        senderName: sender.get("name")
+      }
+    });
+  }).then(function() {
+    response.success();
+  }, function(error) {
+    var message;
+    if (error.code && error.message) {
+      message = "(" + error.code + "): " + error.message;
+    } else {
+      message = error;
+    }
+    response.error(message);
   });
 });
 
