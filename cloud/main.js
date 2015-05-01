@@ -242,6 +242,19 @@ Parse.Cloud.define("wave", function(request, response) {
   });
 });
 
+// Return a promise for the best friend requests between sender and recipient
+var getBestFriendRequests = function(sender, recipient) {
+  var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
+  var requestFromSenderQuery = new Parse.Query(BestFriendRequest);
+  requestFromSenderQuery.equalTo("fromUser", sender);
+  requestFromSenderQuery.equalTo("toUser", recipient);
+  var requestToSenderQuery = new Parse.Query(BestFriendRequest);
+  requestToSenderQuery.equalTo("fromUser", recipient);
+  requestToSenderQuery.equalTo("toUser", sender);
+  var query = Parse.Query.or(requestFromSenderQuery, requestToSenderQuery);
+  return query.find();
+};
+
 Parse.Cloud.define("addBestFriend", function(request, response) {
   Parse.Cloud.useMasterKey();
   var sender = request.user;
@@ -255,85 +268,60 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
   var relation = sender.relation("friends");
   var friendQuery = relation.query();
   friendQuery.equalTo("objectId", recipientId);
-  friendQuery.find({
-    success: function(results) {
-      if (results.length === 0) {
-        response.error("No friend found.");
-        return;
-      }
-
-      var recipient = results[0];
-      // Validate that sender is not already best friends with recipient
-      if (isBestFriend(sender, recipient)) {
-        response.error("You are already best friends.");
-        return;
-      }
-
-      // Find existing best friend requests
-      var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
-      var requestFromSenderQuery = new Parse.Query(BestFriendRequest);
-      requestFromSenderQuery.equalTo("fromUser", sender);
-      requestFromSenderQuery.equalTo("toUser", recipient);
-      var requestToSenderQuery = new Parse.Query(BestFriendRequest);
-      requestToSenderQuery.equalTo("fromUser", recipient);
-      requestToSenderQuery.equalTo("toUser", sender);
-      var query = Parse.Query.or(requestFromSenderQuery, requestToSenderQuery);
-      query.find({
-        success: function(results) {
-          if (results.length > 0) {
-            var bestFriendRequest = results[0];
-            var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
-            if (userSentRequest) {
-              response.error("You have already sent a best friend request.");
-            } else {
-              // Accept best friend request
-              bestFriendRequest.destroy();
-              recipient.addUnique("bestFriends", sender);
-              recipient.save();
-              sender.addUnique("bestFriends", recipient);
-              sender.save(null, {
-                success: function(sender) {
-                  response.success();
-                },
-                error: function(error) {
-                  response.error("Error: " + error.code + " " + error.message);
-                }
-              });
-            }
-          } else {
-            var bestFriendRequest = new BestFriendRequest()
-            bestFriendRequest.set("fromUser", sender);
-            bestFriendRequest.set("toUser", recipient);
-            bestFriendRequest.save();
-
-            var pushQuery = new Parse.Query(Parse.Installation);
-            pushQuery.equalTo("user", recipient);
-
-            Parse.Push.send({
-              where: pushQuery,
-              data: {
-                type: "bestFriendRequest",
-                alert: sender.get("name") + " added you as a best friend.",
-                sound: "default"
-              }
-            }, {
-              success: function() {
-                response.success();
-              },
-              error: function(error) {
-                response.error("Error: " + error.code + " " + error.message);
-              }
-            });
-          }
-        },
-        error: function(error) {
-          response.error("Error: " + error.code + " " + error.message);
-        }
-      });
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
+  friendQuery.find().then(function(results) {
+    if (results.length === 0) {
+      return Parse.Promise.error("No friend found.");
     }
+    var recipient = results[0];
+    // Validate that sender is not already best friends with recipient
+    if (isBestFriend(sender, recipient)) {
+      return Parse.Promise.error("You are already best friends.");
+    }
+
+    return getBestFriendRequests(sender, recipient).then(function(results) {
+      if (results.length > 0) {
+        var bestFriendRequest = results[0];
+        var userSentRequest = bestFriendRequest.get("fromUser").id === sender.id;
+        if (userSentRequest) {
+          return Parse.Promise.error("You have already sent a best friend request.");
+        }
+
+        // Accept best friend request
+        recipient.addUnique("bestFriends", sender);
+        sender.addUnique("bestFriends", recipient);
+        var promises = [bestFriendRequest.destroy(), recipient.save(), sender.save()];
+        return Parse.Promise.when(promises);
+      } else {
+        var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
+        var bestFriendRequest = new BestFriendRequest()
+        bestFriendRequest.set("fromUser", sender);
+        bestFriendRequest.set("toUser", recipient);
+
+        var pushQuery = new Parse.Query(Parse.Installation);
+        pushQuery.equalTo("user", recipient);
+
+        var pushPromise = Parse.Push.send({
+          where: pushQuery,
+          data: {
+            type: "bestFriendRequest",
+            alert: sender.get("name") + " added you as a best friend.",
+            sound: "default"
+          }
+        });
+        var promises = [bestFriendRequest.save(), pushPromise];
+        return Parse.Promise.when(promises);
+      }
+    });
+  }).then(function() {
+    response.success();
+  }, function(error) {
+    var message;
+    if (error.code && error.message) {
+      message = "(" + error.code + "): " + error.message;
+    } else {
+      message = error;
+    }
+    response.error(message);
   });
 });
 
