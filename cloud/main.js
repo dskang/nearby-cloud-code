@@ -97,37 +97,28 @@ var getBestFriends = function(user) {
 };
 
 // Send a silent notification to get new location is current data is stale
-var requestUpdatedLocations = function(users) {
-  for (var i = 0; i < users.length; i++) {
-    var user = users[i];
-    var hidden = user.get("hideLocation");
-    if (!hidden) {
-      var location = user.get("location");
-      var locationAge;
-      if (location) {
-        var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
-        locationAge = currentTimestamp - location["timestamp"];
-      }
-      if (!location || locationAge > LOCATION_STALE_AGE) {
-        var pushQuery = new Parse.Query(Parse.Installation);
-        pushQuery.equalTo("user", user);
-
-        Parse.Push.send({
-          where: pushQuery,
-          data: {
-            "content-available": 1,
-            type: "updateLocation"
-          }
-        }, {
-          success: function() {
-          },
-          error: function(error) {
-            response.error("Error: " + error.code + " " + error.message);
-          }
-        });
-      }
+var requestUpdatedLocation = function(user) {
+  var hidden = user.get("hideLocation");
+  if (!hidden) {
+    var location = user.get("location");
+    var locationAge;
+    if (location) {
+      var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
+      locationAge = currentTimestamp - location["timestamp"];
+    }
+    if (!location || locationAge > LOCATION_STALE_AGE) {
+      var pushQuery = new Parse.Query(Parse.Installation);
+      pushQuery.equalTo("user", user);
+      return Parse.Push.send({
+        where: pushQuery,
+        data: {
+          "content-available": 1,
+          type: "updateLocation"
+        }
+      });
     }
   }
+  return Parse.Promise.as();
 };
 
 Parse.Cloud.define("nearbyFriends", function(request, response) {
@@ -170,13 +161,22 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
       return friendJSON;
     });
 
-    response.success({
-      nearbyFriends: nearbyFriends,
-      bestFriends: bestFriendsJSON
-    });
+    var respond = function() {
+      response.success({
+        nearbyFriends: nearbyFriends,
+        bestFriends: bestFriendsJSON
+      });
+    }
 
-    // requestUpdatedLocations(nearbyFriends);
-    // requestUpdatedLocations(bestFriends);
+    // Request updated locations for friends with stale locations
+    var pushPromises = [];
+    var friends = nearbyFriends.concat(bestFriends);
+    for (var i = 0; i < friends.length; i++) {
+      var friend = friends[i];
+      // pushPromises.push(requestUpdatedLocation(friend));
+    }
+    // Respond with friends regardless of push notification success
+    Parse.Promise.when(pushPromises).then(respond, respond);
   }, function(error) {
     response.error("Error: " + error.code + " " + error.message);
   });
