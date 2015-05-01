@@ -50,6 +50,18 @@ var hasBlocked = function(user1, user2) {
   return false;
 };
 
+var errorHandler = function(response) {
+  return function(error) {
+    var message;
+    if (error.code && error.message) {
+      message = "(" + error.code + "): " + error.message;
+    } else {
+      message = error;
+    }
+    response.error(message);
+  };
+}
+
 var getNearbyFriends = function(user) {
   var relation = user.relation("friends");
   var friendQuery = relation.query();
@@ -177,9 +189,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     }
     // Respond with friends regardless of push notification success
     Parse.Promise.when(pushPromises).then(respond, respond);
-  }, function(error) {
-    response.error("(" + error.code + "): " + error.message);
-  });
+  }, errorHandler(response));
 });
 
 Parse.Cloud.define("wave", function(request, response) {
@@ -231,15 +241,7 @@ Parse.Cloud.define("wave", function(request, response) {
     });
   }).then(function() {
     response.success();
-  }, function(error) {
-    var message;
-    if (error.code && error.message) {
-      message = "(" + error.code + "): " + error.message;
-    } else {
-      message = error;
-    }
-    response.error(message);
-  });
+  }, errorHandler(response));
 });
 
 // Return a promise for the best friend requests between sender and recipient
@@ -314,15 +316,7 @@ Parse.Cloud.define("addBestFriend", function(request, response) {
     });
   }).then(function() {
     response.success();
-  }, function(error) {
-    var message;
-    if (error.code && error.message) {
-      message = "(" + error.code + "): " + error.message;
-    } else {
-      message = error;
-    }
-    response.error(message);
-  });
+  }, errorHandler(response));
 });
 
 Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
@@ -345,15 +339,7 @@ Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
     }
   }).then(function() {
     response.success();
-  }, function(error) {
-    var message;
-    if (error.code && error.message) {
-      message = "(" + error.code + "): " + error.message;
-    } else {
-      message = error;
-    }
-    response.error(message);
-  });
+  }, errorHandler(response));
 });
 
 Parse.Cloud.define("removeBestFriend", function(request, response) {
@@ -380,7 +366,5 @@ Parse.Cloud.define("removeBestFriend", function(request, response) {
   var promises = [recipient.save(), sender.save()];
   Parse.Promise.when(promises).then(function() {
     response.success();
-  }, function(error) {
-    response.error("Error: " + error.code + " " + error.message);
-  });
+  }, errorHandler(response));
 });
