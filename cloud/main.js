@@ -336,28 +336,23 @@ Parse.Cloud.define("removeBestFriendRequest", function(request, response) {
   var recipient = new Parse.User();
   recipient.id = recipientId;
 
-  // Find existing best friend requests
-  var BestFriendRequest = Parse.Object.extend("BestFriendRequest");
-  var requestFromSenderQuery = new Parse.Query(BestFriendRequest);
-  requestFromSenderQuery.equalTo("fromUser", sender);
-  requestFromSenderQuery.equalTo("toUser", recipient);
-  var requestToSenderQuery = new Parse.Query(BestFriendRequest);
-  requestToSenderQuery.equalTo("fromUser", recipient);
-  requestToSenderQuery.equalTo("toUser", sender);
-  var query = Parse.Query.or(requestFromSenderQuery, requestToSenderQuery);
-  query.find({
-    success: function(results) {
-      if (results.length > 0) {
-        var bestFriendRequest = results[0];
-        bestFriendRequest.destroy();
-        response.success();
-      } else {
-        response.error("No best friend request found.");
-      }
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
+  getBestFriendRequests(sender, recipient).then(function(results) {
+    if (results.length > 0) {
+      var bestFriendRequest = results[0];
+      return bestFriendRequest.destroy();
+    } else {
+      return Parse.Promise.error("No best friend request found.");
     }
+  }).then(function() {
+    response.success();
+  }, function(error) {
+    var message;
+    if (error.code && error.message) {
+      message = "(" + error.code + "): " + error.message;
+    } else {
+      message = error;
+    }
+    response.error(message);
   });
 });
 
