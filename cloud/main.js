@@ -369,16 +369,18 @@ Parse.Cloud.define("removeBestFriend", function(request, response) {
   recipient.id = recipientId;
 
   var bf = isBestFriend(sender, recipient);
+  if (!bf) {
+    response.error("No best friend to remove.");
+    return;
+  }
 
   recipient.remove("bestFriends", sender);
-  recipient.save();
   sender.remove("bestFriends", recipient);
-  sender.save(null, {
-    success: function(sender) {
-      response.success();
-    },
-    error: function(error) {
-      response.error("Error: " + error.code + " " + error.message);
-    }
+
+  var promises = [recipient.save(), sender.save()];
+  Parse.Promise.when(promises).then(function() {
+    response.success();
+  }, function(error) {
+    response.error("Error: " + error.code + " " + error.message);
   });
 });
