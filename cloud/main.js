@@ -87,6 +87,14 @@ Parse.Cloud.define("updateLocation", function(request, response) {
     var promises = [getNearbyFriends(user), getNearbyNotifications(user)];
     return Parse.Promise.when(promises);
   }).then(function(nearbyFriends, nearbyNotifications) {
+    // Don't consider nearby friends whose locations are stale
+    nearbyFriends = nearbyFriends.filter(function(friend) {
+      var location = friend.get("location");
+      var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
+      var locationAge = currentTimestamp - location["timestamp"];
+      return (locationAge < LOCATION_STALE_AGE);
+    });
+
     // Get nearby friends who were not previously nearby
     var newNearbyFriends = nearbyFriends.filter(function(friend) {
       var alreadyNotified = false;
