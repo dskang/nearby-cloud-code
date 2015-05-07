@@ -13,6 +13,9 @@ var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
 // Number of seconds before a location is considered stale
 var LOCATION_STALE_AGE = 60 * 5;
 
+// Number of seconds before a nearby notification is sent about the same friend
+var NOTIFICATION_INTERVAL = 60 * 30;
+
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
   var user2Location = user2.get("location");
@@ -73,6 +76,110 @@ var getNearbyNotifications = function(user) {
   return query.find();
 };
 
+// Return nearby friends who were not previously nearby
+var getNewNearbyFriends = function(nearbyFriends, nearbyNotifications) {
+  var newNearbyFriends = nearbyFriends.filter(function(friend) {
+    var alreadyNearby = false;
+    for (var i = 0; i < nearbyNotifications.length; i++) {
+      var notification = nearbyNotifications[i];
+      var fromFriend = notification.get("fromUser").id === friend.id;
+      var toFriend = notification.get("toUser").id === friend.id;
+      if (fromFriend || toFriend) {
+        alreadyNearby = notification.get("currentlyNearby");
+        break;
+      }
+    }
+    return !alreadyNearby;
+  });
+  return newNearbyFriends;
+};
+
+// Return a new or updated notification for each newly nearby friend
+var getNewNotifications = function(newNearbyFriends, nearbyNotifications, user) {
+  var newNotifications = newNearbyFriends.map(function(friend) {
+    var nearbyNotification;
+    for (var i = 0; i < nearbyNotifications.length; i++) {
+      var notification = nearbyNotifications[i];
+      var fromFriend = notification.get("fromUser").id === friend.id;
+      var toFriend = notification.get("toUser").id === friend.id;
+      if (fromFriend || toFriend) {
+        nearbyNotification = notification;
+        break;
+      }
+    }
+
+    if (!nearbyNotification) {
+      var NearbyNotification = Parse.Object.extend("NearbyNotification");
+      nearbyNotification = new NearbyNotification();
+      nearbyNotification.set("fromUser", user);
+      nearbyNotification.set("toUser", friend);
+    }
+
+    nearbyNotification.set("currentlyNearby", true);
+    return nearbyNotification;
+  });
+  return newNotifications;
+};
+
+// Return nearby friends who should be notified about user's nearness
+var getFriendsToNotify = function(newNearbyFriends, notifications) {
+  var friendsToNotify = [];
+  for (var i = 0; i < newNearbyFriends.length; i++) {
+    var friend = newNearbyFriends[i];
+    var nearbyNotification;
+    for (var j = 0; j < notifications.length; j++) {
+      var notification = notifications[i];
+      var fromFriend = notification.get("fromUser").id === friend.id;
+      var toFriend = notification.get("toUser").id === friend.id;
+      if (fromFriend || toFriend) {
+        nearbyNotification = notification;
+        break;
+      }
+    }
+
+    var lastNotified = nearbyNotification.get("lastNotified");
+    var interval;
+    if (lastNotified) {
+      var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
+      var notifiedTimestamp = lastNotified.getTime() / 1000;
+      interval = currentTimestamp - notifiedTimestamp;
+    }
+    if (!lastNotified || interval >= NOTIFICATION_INTERVAL) {
+      nearbyNotification.set("lastNotified", new Date());
+      friendsToNotify.push(friend);
+    }
+  }
+  return friendsToNotify;
+}
+
+// Return notifications for friends who are no longer nearby
+var getOldNotifications = function(nearbyFriends, nearbyNotifications) {
+  var oldNotifications = nearbyNotifications.filter(function(notification) {
+    if (!notification.get("currentlyNearby")) {
+      return false;
+    }
+
+    var currentlyNearby = false;
+    for (var i = 0; i < nearbyFriends.length; i++) {
+      var friend = nearbyFriends[i];
+      var fromFriend = notification.get("fromUser").id === friend.id;
+      var toFriend = notification.get("toUser").id === friend.id;
+      if (fromFriend || toFriend) {
+        currentlyNearby = true;
+        break;
+      }
+    }
+
+    if (!currentlyNearby) {
+      notification.set("currentlyNearby", false);
+      return true;
+    } else {
+      return false;
+    }
+  });
+  return oldNotifications;
+}
+
 Parse.Cloud.define("updateLocation", function(request, response) {
   Parse.Cloud.useMasterKey();
   var user = request.user;
@@ -95,79 +202,61 @@ Parse.Cloud.define("updateLocation", function(request, response) {
       return (locationAge < LOCATION_STALE_AGE);
     });
 
-    // Get nearby friends who were not previously nearby
-    var newNearbyFriends = nearbyFriends.filter(function(friend) {
-      var alreadyNotified = false;
-      for (var i = 0; i < nearbyNotifications.length; i++) {
-        var notification = nearbyNotifications[i];
-        var fromFriend = notification.get("fromUser").id === friend.id;
-        var toFriend = notification.get("toUser").id === friend.id;
-        if (fromFriend || toFriend) {
-          alreadyNotified = true;
-          break;
-        }
-      }
-      return !alreadyNotified;
+    // Don't consider nearby friends whose locations may be inaccurate
+    // TODO: Remove once filtered from client side
+    nearbyFriends = nearbyFriends.filter(function(friend) {
+      var location = friend.get("location");
+      return location["accuracy"] < NEARBY_DISTANCE * 2;
     });
 
-    // Get notifications for friends who are no longer nearby
-    var notificationsToRemove = nearbyNotifications.filter(function(notification) {
-      var currentlyNearby = false;
-      for (var i = 0; i < nearbyFriends.length; i++) {
-        var friend = nearbyFriends[i];
-        var fromFriend = notification.get("fromUser").id === friend.id;
-        var toFriend = notification.get("toUser").id === friend.id;
-        if (fromFriend || toFriend) {
-          currentlyNearby = true;
-          break;
-        }
-      }
-      return !currentlyNearby;
-    });
+    // Get nearby friends who were not previously nearby
+    var newNearbyFriends = getNewNearbyFriends(nearbyFriends, nearbyNotifications);
 
     var promises = [];
 
-    // Destroy notifications for friends who are no longer nearby
-    if (notificationsToRemove.length > 0) {
-      promises.push(Parse.Object.destroyAll(notificationsToRemove));
+    // Create or update notifications for friends who are newly nearby
+    var newNotifications = getNewNotifications(newNearbyFriends, nearbyNotifications, user);
+    var friendsToNotify = getFriendsToNotify(newNearbyFriends, newNotifications);
+    if (newNotifications.length > 0) {
+      promises.push(Parse.Object.saveAll(newNotifications));
     }
 
-    // Create nearby notifications between user and nearby friends
-    var NearbyNotification = Parse.Object.extend("NearbyNotification");
-    var newNearbyNotifications = newNearbyFriends.map(function(friend) {
-      var nearbyNotification = new NearbyNotification();
-      nearbyNotification.set("fromUser", user);
-      nearbyNotification.set("toUser", friend);
-      return nearbyNotification;
-    });
-    if (newNearbyNotifications.length > 0) {
-      promises.push(Parse.Object.saveAll(newNearbyNotifications));
+    // Update notifications for friends who are no longer nearby
+    var oldNotifications = getOldNotifications(nearbyFriends, nearbyNotifications);
+    if (oldNotifications.length > 0) {
+      promises.push(Parse.Object.saveAll(oldNotifications));
     }
+
+    return Parse.Promise.when(promises).then(function() {
+      return Parse.Promise.as(friendsToNotify);
+    });
+  }).then(function(friends) {
+    var promises = [];
 
     // Notify nearby friends about user
-    for (var i = 0; i < newNearbyFriends.length; i++) {
-      var friend = newNearbyFriends[i];
-      var pushQuery = new Parse.Query(Parse.Installation);
-      pushQuery.equalTo("user", friend);
-      var pushMessage = user.get("name") + " is nearby!";
-      var pushToFriend = Parse.Push.send({
-        where: pushQuery,
-        expiration_interval: 60 * 30, // 30 minutes
-        data: {
-          type: "nearbyFriend",
-          alert: pushMessage,
-          senderId: user.id,
-          senderName: user.get("name")
-        }
-      });
-      promises.push(pushToFriend);
-    }
+    // for (var i = 0; i < friends.length; i++) {
+    //   var friend = friends[i];
+    //   var pushQuery = new Parse.Query(Parse.Installation);
+    //   pushQuery.equalTo("user", friend);
+    //   var pushMessage = user.get("name") + " is nearby!";
+    //   var pushToFriend = Parse.Push.send({
+    //     where: pushQuery,
+    //     expiration_interval: 60 * 30, // 30 minutes
+    //     data: {
+    //       type: "nearbyFriend",
+    //       alert: pushMessage,
+    //       senderId: user.id,
+    //       senderName: user.get("name")
+    //     }
+    //   });
+    //   promises.push(pushToFriend);
+    // }
 
     // Notify user about nearby friends
-    if (newNearbyFriends.length > 0) {
-      var firstFriend = newNearbyFriends[0];
+    if (friends.length > 0) {
+      var firstFriend = friends[0];
       var pushMessage = firstFriend.get("name");
-      var othersCount = newNearbyFriends.length - 1;
+      var othersCount = friends.length - 1;
       if (othersCount > 1) {
         pushMessage += " and " + othersCount + " other friends are nearby!";
       } else if (othersCount === 1) {
