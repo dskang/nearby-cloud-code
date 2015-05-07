@@ -77,7 +77,10 @@ Parse.Cloud.define("updateLocation", function(request, response) {
     var promises = [getNearbyFriends(user), Alert.queryForUser(user)];
     return Parse.Promise.when(promises);
   }).then(function(nearbyFriends, alerts) {
-    // Don't consider nearby friends whose locations are stale
+    var promises = [];
+    promises.push(Alert.updateWithNearbyFriends(nearbyFriends, alerts, user));
+
+    // Don't alert about nearby friends with stale locations
     nearbyFriends = nearbyFriends.filter(function(friend) {
       var location = friend.get("location");
       var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
@@ -85,16 +88,12 @@ Parse.Cloud.define("updateLocation", function(request, response) {
       return (locationAge < LOCATION_STALE_AGE);
     });
 
-    // Don't consider nearby friends whose locations may be inaccurate
+    // Don't alert about nearby friends whose locations may be inaccurate
     // TODO: Remove once filtered from client side
     nearbyFriends = nearbyFriends.filter(function(friend) {
       var location = friend.get("location");
       return location["accuracy"] < NEARBY_DISTANCE * 2;
     });
-    return Parse.Promise.as(nearbyFriends, alerts);
-  }).then(function(nearbyFriends, alerts) {
-    var promises = [];
-    promises.push(Alert.updateWithNearbyFriends(nearbyFriends, alerts, user));
 
     // NB: `alerts` does not (and does not need to) include alerts for newly nearby friends
     var friendsToAlert = nearbyFriends.filter(function(friend) {
