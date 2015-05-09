@@ -17,9 +17,14 @@ var LOCATION_STALE_AGE = 60 * 5;
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
   var user2Location = user2.get("location");
-  var distance = utils.haversineDistance(
-    user1Location.latitude, user1Location.longitude,
-    user2Location.latitude, user2Location.longitude);
+  var distance;
+  if (user1Location && user2Location) {
+    distance = utils.haversineDistance(
+      user1Location.latitude, user1Location.longitude,
+      user2Location.latitude, user2Location.longitude);
+  } else {
+    distance = Number.POSITIVE_INFINITY;
+  }
   return distance;
 };
 
