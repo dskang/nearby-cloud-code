@@ -241,7 +241,7 @@ Parse.Cloud.define("nearbyFriends", function(request, response) {
     var friends = nearbyFriends.concat(bestFriends);
     for (var i = 0; i < friends.length; i++) {
       var friend = friends[i];
-      // pushPromises.push(requestUpdatedLocation(friend));
+      pushPromises.push(requestUpdatedLocation(friend));
     }
     // Respond with friends regardless of push notification success
     Parse.Promise.when(pushPromises).then(respond, respond);
