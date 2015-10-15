@@ -5,8 +5,8 @@ var Alert = require("cloud/alert.js");
 var utils = require("cloud/utils.js");
 
 // Max distance between nearby users
-// 150 meters =~ 0.1 miles =~ 2 minute walk
-var NEARBY_DISTANCE = 150;
+// 400 meters =~ 0.25 miles =~ 5 minute walk
+var NEARBY_DISTANCE = 400;
 
 // Max distance to wave to a user
 var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
