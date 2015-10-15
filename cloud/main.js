@@ -12,7 +12,7 @@ var NEARBY_DISTANCE = 150;
 var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
 
 // Number of seconds before a location is considered stale
-var LOCATION_STALE_AGE = 60 * 5;
+var LOCATION_STALE_AGE = 60 * 60;
 
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
