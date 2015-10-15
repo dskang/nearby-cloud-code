@@ -19,12 +19,8 @@ var Alert = Parse.Object.extend("Alert", {
   },
   shouldSend: function() {
     var currentlyNearby = this.get("currentlyNearby");
-    var pending = this.get("pending");
-    var nearbyStart = this.get("nearbyStart");
-    var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
-    var nearbyTimestamp = nearbyStart.getTime() / 1000;
-    var interval = currentTimestamp - nearbyTimestamp;
-    return currentlyNearby && pending && !this.recentlySent() && (interval >= NEARBY_INTERVAL);
+    var sent = this.get("sent");
+    return currentlyNearby && !sent && !this.recentlySent();
   },
   includesUser: function(user) {
     var fromMatch = this.get("fromUser").id === user.id;
@@ -51,28 +47,37 @@ var Alert = Parse.Object.extend("Alert", {
     }
     return null;
   },
+  getNewAlerts: function(nearbyFriends, alerts, user) {
+    var newAlerts = [];
+    for (var i = 0; i < nearbyFriends.length; i++) {
+      var friend = nearbyFriends[i];
+      var alert = Alert.alertForUser(friend, alerts);
+      if (!alert) {
+        alert = new Alert();
+        alert.set("fromUser", user);
+        alert.set("toUser", friend);
+        alert.set("currentlyNearby", true);
+        alert.set("sent", false);
+        newAlerts.push(alert);
+      }
+    }
+    return newAlerts;
+  },
   // Update alerts for nearby friends and friends who are no longer nearby
   updateWithNearbyFriends: function(nearbyFriends, alerts, user) {
     var updatedAlerts = [];
-    // Update or create alerts for nearby friends who were not already nearby
+    // Update alerts for nearby friends who were not already nearby
     for (var i = 0; i < nearbyFriends.length; i++) {
       var friend = nearbyFriends[i];
-      var alertForFriend = Alert.alertForUser(friend, alerts);
-
-      if (!alertForFriend) {
-        alertForFriend = new Alert();
-        alertForFriend.set("fromUser", user);
-        alertForFriend.set("toUser", friend);
-      }
-
-      var alreadyNearby = alertForFriend.get("currentlyNearby");
+      var alert = Alert.alertForUser(friend, alerts);
+      var alreadyNearby = alert.get("currentlyNearby");
       if (!alreadyNearby) {
-        alertForFriend.set("currentlyNearby", true);
-        if (!alertForFriend.recentlySent()) {
-          alertForFriend.set("nearbyStart", new Date());
-          alertForFriend.set("pending", true);
+        alert.set("currentlyNearby", true);
+        // Consider the alert sent if an alert was recently sent
+        if (alert.recentlySent()) {
+          alert.set("sent", true);
         }
-        updatedAlerts.push(alertForFriend);
+        updatedAlerts.push(alert);
       }
     }
 
@@ -92,7 +97,7 @@ var Alert = Parse.Object.extend("Alert", {
 
         if (!currentlyNearby) {
           alert.set("currentlyNearby", false);
-          alert.set("pending", false);
+          alert.set("sent", false);
           updatedAlerts.push(alert);
         }
       }
@@ -106,7 +111,7 @@ var Alert = Parse.Object.extend("Alert", {
     // Update alerts
     var updatedAlerts = friendsToAlert.map(function(friend) {
       var alert = Alert.alertForUser(friend, alerts);
-      alert.set("pending", false);
+      alert.set("sent", true);
       alert.set("lastSent", new Date());
       return alert;
     });
@@ -131,6 +136,7 @@ var Alert = Parse.Object.extend("Alert", {
         }
       });
       promises.push(pushToFriend);
+      Parse.Analytics.track('alert');
     }
 
     // Notify user about nearby friends
@@ -158,6 +164,7 @@ var Alert = Parse.Object.extend("Alert", {
         }
       });
       promises.push(pushToUser);
+      Parse.Analytics.track('alert');
     }
     return promises;
   }

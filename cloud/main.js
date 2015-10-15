@@ -83,6 +83,11 @@ Parse.Cloud.define("updateLocation", function(request, response) {
     return Parse.Promise.when(promises);
   }).then(function(nearbyFriends, alerts) {
     var promises = [];
+    // Add new alerts
+    var newAlerts = Alert.getNewAlerts(nearbyFriends, alerts, user);
+    promises.push(Parse.Object.saveAll(newAlerts));
+    alerts = alerts.concat(newAlerts);
+    // Update alerts
     promises.push(Alert.updateWithNearbyFriends(nearbyFriends, alerts, user));
 
     // Don't alert about nearby friends with stale locations
@@ -100,14 +105,9 @@ Parse.Cloud.define("updateLocation", function(request, response) {
       return location["accuracy"] < NEARBY_DISTANCE * 2;
     });
 
-    // NB: `alerts` does not (and does not need to) include alerts for newly nearby friends
     var friendsToAlert = nearbyFriends.filter(function(friend) {
       var alert = Alert.alertForUser(friend, alerts);
-      if (alert) {
-        return alert.shouldSend();
-      } else {
-        return false;
-      }
+      return alert.shouldSend();
     });
 
     promises.concat(Alert.sendAlerts(user, friendsToAlert, alerts));
