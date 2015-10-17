@@ -14,6 +14,9 @@ var WAVE_DISTANCE = NEARBY_DISTANCE * 2;
 // Number of seconds before a location is considered stale
 var LOCATION_STALE_AGE = 60 * 60;
 
+// Number of seconds before a location is considered too stale
+var LOCATION_TOO_STALE_AGE = 60 * 60 * 24 * 2;
+
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
   var user2Location = user2.get("location");
@@ -164,26 +167,25 @@ var getBestFriends = function(user) {
   return bestFriendsQuery.find();
 };
 
-// Send a silent notification to get new location is current data is stale
+// Send a silent notification to get new location is current data is stale but not too stale
 var requestUpdatedLocation = function(user) {
   var hidden = user.get("hideLocation");
   if (!hidden) {
     var location = user.get("location");
-    var locationAge;
     if (location) {
       var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
-      locationAge = currentTimestamp - location["timestamp"];
-    }
-    if (!location || locationAge > LOCATION_STALE_AGE) {
-      var pushQuery = new Parse.Query(Parse.Installation);
-      pushQuery.equalTo("user", user);
-      return Parse.Push.send({
-        where: pushQuery,
-        data: {
-          "content-available": 1,
-          type: "updateLocation"
-        }
-      });
+      var locationAge = currentTimestamp - location["timestamp"];
+      if (locationAge > LOCATION_STALE_AGE && locationAge < LOCATION_TOO_STALE_AGE) {
+        var pushQuery = new Parse.Query(Parse.Installation);
+        pushQuery.equalTo("user", user);
+        return Parse.Push.send({
+          where: pushQuery,
+          data: {
+            "content-available": 1,
+            type: "updateLocation"
+          }
+        });
+      }
     }
   }
   return Parse.Promise.as();
