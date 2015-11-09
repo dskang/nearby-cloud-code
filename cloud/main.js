@@ -17,6 +17,9 @@ var LOCATION_STALE_AGE = 60 * 60;
 // Number of seconds before a location is considered too stale
 var LOCATION_TOO_STALE_AGE = 60 * 60 * 24 * 2;
 
+// Location age (in seconds) under which users will be notified of a nearby friend
+var LOCATION_AGE_NEARBY_THRESHOLD = 60 * 60 * 4;
+
 var getDistance = function(user1, user2) {
   var user1Location = user1.get("location");
   var user2Location = user2.get("location");
@@ -98,7 +101,7 @@ Parse.Cloud.define("updateLocation", function(request, response) {
       var location = friend.get("location");
       var currentTimestamp = Date.now() / 1000; // convert from ms to seconds
       var locationAge = currentTimestamp - location["timestamp"];
-      return (locationAge < LOCATION_STALE_AGE);
+      return (locationAge < LOCATION_AGE_NEARBY_THRESHOLD);
     });
 
     // Don't alert about nearby friends whose locations may be inaccurate
